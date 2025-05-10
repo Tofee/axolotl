@@ -1,5 +1,5 @@
 use presage as p;
-use presage::prelude::ServiceError;
+use presage::libsignal_service::prelude::ServiceError;
 use presage_store_sled::SledStoreError;
 
 const FAILED_TO_LOOK_UP_ADDRESS: &str = "failed to lookup address information";
@@ -95,12 +95,12 @@ impl From<PresageError> for ApplicationError {
             // p::Error::MessageSenderError(p::libsignal_service::sender::MessageSenderError {
             //     recipient: _,
             // }) => ApplicationError::NoInternet,
-            p::Error::MessageSenderError(
-                p::libsignal_service::sender::MessageSenderError::ServiceError(
-                    p::libsignal_service::content::ServiceError::SendError { reason: e },
-                ),
-            ) if e.to_string().contains(FAILED_TO_LOOK_UP_ADDRESS) => ApplicationError::NoInternet,
-            p::Error::MessageSenderError(e) => ApplicationError::SendFailed(e),
+            //p::Error::MessageSenderError(
+            //    p::libsignal_service::sender::MessageSenderError::ServiceError(
+            //        p::libsignal_service::content::ServiceError::SendError { reason: e },
+            //    ),
+            //) if e.to_string().contains(FAILED_TO_LOOK_UP_ADDRESS) => ApplicationError::NoInternet,
+            p::Error::MessageSenderError(e) => ApplicationError::SendFailed(*e),
             _ => ApplicationError::Presage(e),
         }
     }
