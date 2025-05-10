@@ -104,6 +104,10 @@ async fn start_ui(mode: Mode) -> JoinHandle<()> {
             }
             Mode::Daemon => {
                 log::info!("Running headless");
+//                let _warp = tokio::spawn(async {
+                    let route = warp::fs::dir("./axolotl-web/dist");
+                    warp::serve(route).run(([127, 0, 0, 1], 9081)).await;
+//                });
             }
         }
     })
