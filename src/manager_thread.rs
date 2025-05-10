@@ -1,18 +1,20 @@
 use futures::{select, FutureExt, StreamExt};
 use presage::libsignal_service::configuration::SignalServers;
-use presage::libsignal_service::content::ContentBody;
-use presage::libsignal_service::models::Contact;
-use presage::libsignal_service::prelude::AttachmentIdentifier;
-use presage::libsignal_service::sender::AttachmentSpec;
-use presage::libsignal_service::{groups_v2::Group, sender::AttachmentUploadError};
-use presage::manager::{ReceivingMode, Registered};
-use presage::proto::DataMessage;
-use presage::store::{ContentsStore, StateStore};
+use presage::libsignal_service::content::{Content, ContentBody};
+//use presage::libsignal_service::models::Contact;
+use presage::libsignal_service::prelude::{AttachmentIdentifier, ProfileKey, Uuid};
+use presage::libsignal_service::protocol::ServiceId;
+use presage::libsignal_service::sender::{AttachmentSpec, AttachmentUploadError};
+use presage::manager::Registered;
+use presage::model::messages::Received;
+use presage::model::groups::Group;
+use presage::model::contacts::Contact;
+use presage::proto::{AttachmentPointer, DataMessage};
+use presage::store::{ContentsStore, StateStore, Thread};
 use presage::{
-    prelude::{ServiceAddress, *},
     Error, Manager,
 };
-use presage::{GroupMasterKeyBytes, Thread, ThreadMetadata, ThreadMetadataMessageContent};
+use presage::{GroupMasterKeyBytes, ThreadMetadata, ThreadMetadataMessageContent};
 use std::ops::Bound;
 use std::sync::Arc;
 use tokio::sync::Mutex;
@@ -44,7 +46,7 @@ enum Command {
         oneshot::Sender<Result<Option<Group>, SledStoreError>>,
     ),
     SendMessage(
-        ServiceAddress,
+        Uuid,
         Box<ContentBody>,
         u64,
         oneshot::Sender<Result<(), PresageError>>,
@@ -381,14 +383,14 @@ impl ManagerThread {
 
     pub async fn send_message(
         &self,
-        recipient_addr: impl Into<ServiceAddress>,
+        recipient_addr: Uuid,
         message: impl Into<ContentBody>,
         timestamp: u64,
     ) -> Result<(), PresageError> {
         let (sender, receiver) = oneshot::channel();
         self.command_sender
             .send(Command::SendMessage(
-                recipient_addr.into(),
+                recipient_addr,
                 Box::new(message.into()),
                 timestamp,
                 sender,
@@ -474,7 +476,7 @@ async fn setup_manager(
 ) -> Result<presage::Manager<SledStore, Registered>, PresageError> {
     log::info!("Loading the configuration store");
     // presage::Manager::load_registered(config_store.clone())
-    if config_store.is_registered() {
+    if config_store.is_registered().await {
         log::debug!("The config store is valid and reports registered, loading the manager");
         let manager = presage::Manager::load_registered(config_store.clone()).await?;
         log::info!("The configuration store is already valid, loading a registered account");
@@ -521,7 +523,7 @@ async fn command_loop(
 ) {
     'outer: loop {
         let msgs: Result<_, presage::Error<<SledStore as presage::store::Store>::Error>> =
-            manager.receive_messages(ReceivingMode::Forever).await;
+            manager.receive_messages().await;
         log::debug!("start receiving messages from presage");
         match msgs {
             Ok(messages) => {
@@ -533,13 +535,14 @@ async fn command_loop(
 
                     select! {
                         msg = messages.next().fuse() => {
-                            if let Some(msg) = msg {
+                            match msg {
+                              Some(Received::Content(msg)) => {
                                 match msg.body.clone() {
                                     ContentBody::DataMessage(data) => {
                                         log::debug!("Received message data: {:?}", &data);
 
                                         let body = data.body.as_ref().unwrap_or(&String::from("")).to_string();
-                                        let thread = Thread::try_from(&msg).unwrap();
+                                        let thread = Thread::try_from(&*msg).unwrap();
                                         let title = manager.thread_title(&thread).await.unwrap_or("".to_string());
                                         let mut thread_metadata = match manager.store().thread_metadata(thread.clone()){
                                             Ok(Some(thread_metadata)) => thread_metadata,
@@ -580,7 +583,7 @@ async fn command_loop(
                                             thread_metadata.last_message = Some(ThreadMetadataMessageContent{
                                                 message,
                                                 timestamp: msg.metadata.timestamp,
-                                                sender: msg.metadata.sender.uuid,
+                                                sender: msg.metadata.sender.raw_uuid(),
                                             });
                                             match manager.store().clone().save_thread_metadata(thread_metadata.clone()){
                                                 Ok(_) => {},
@@ -590,7 +593,7 @@ async fn command_loop(
                                             }
 
                                         }
-                                        let sender = msg.metadata.sender.uuid;
+                                        let sender = msg.metadata.sender.raw_uuid();
                                         let is_group = matches!(thread, Thread::Group(_));
                                         let mut notification = Notification{
                                             sender: title.clone(),
@@ -670,7 +673,7 @@ async fn command_loop(
                                                 }
                                                 if let Some(_data) = m.body.clone() {
                                                     let body = m.body.as_ref().unwrap_or(&String::from("")).to_string();
-                                                    let thread = Thread::try_from(&msg).unwrap();
+                                                    let thread = Thread::try_from(&*msg).unwrap();
                                                     log::debug!("Received sync data message: {:?}", &thread);
                                                     let title = manager.thread_title(&thread).await.unwrap_or("".to_string());
 
@@ -710,7 +713,7 @@ async fn command_loop(
                                                         thread_metadata.last_message = Some(ThreadMetadataMessageContent{
                                                             message: Some(body.clone()),
                                                             timestamp: msg.metadata.timestamp,
-                                                            sender: msg.metadata.sender.uuid,
+                                                            sender: msg.metadata.sender.raw_uuid(),
                                                         });
                                                         let _ = manager.store().clone().save_thread_metadata(thread_metadata.clone());
 
@@ -721,13 +724,18 @@ async fn command_loop(
                                     }
                                     _ => {}
                                 }
-                                if content.send(msg).is_err() {
+                                if content.send(*msg).is_err() {
                                     log::info!("Failed to send message to `Manager`, exiting");
                                     break 'outer;
                                 }
-                            } else {
+                              },
+                              Some(_) => {
+                                log::info!("Unknown other content, not doing anything.");
+                              },
+                              _ => {
                                 log::info!("Message stream finished. Restarting command loop.");
                                 break;
+                              }
                             }
                         },
                         cmd = receiver.recv().fuse() => {
@@ -898,7 +906,8 @@ async fn handle_command(manager: &mut Manager<SledStore, Registered>, command: C
                 manager
                     .store()
                     .contacts()
-                    .map(|c: presage_store_sled::SledContactsIter| {
+                    .await
+                    .map(|c| {
                         c.filter_map(|o| o.ok()).collect()
                     }),
             )
@@ -913,13 +922,13 @@ async fn handle_command(manager: &mut Manager<SledStore, Registered>, command: C
             })
             .expect("Callback sending failed"),
         Command::GetGroup(master_key, callback) => callback
-            .send(manager.store().group(master_key))
+            .send(manager.store().group(master_key).await)
             .map_err(|_| ())
             .expect("Callback sending failed"),
         Command::SendMessage(recipient_address, message, timestamp, callback) => callback
             .send(
                 manager
-                    .send_message(recipient_address, *message, timestamp)
+                    .send_message(ServiceId::Aci(recipient_address.into()), *message, timestamp)
                     .await,
             )
             .expect("Callback sending failed"),
@@ -938,7 +947,7 @@ async fn handle_command(manager: &mut Manager<SledStore, Registered>, command: C
             .expect("Callback sending failed"),
 
         Command::GetMessages(thread, range, callback) => {
-            let _ = callback.send(manager.store().messages(&thread, range));
+            let _ = callback.send(manager.store().messages(&thread, range).await);
         }
         Command::ThreadMetadata(thread, callback) => callback
             .send(manager.store().thread_metadata(thread))
@@ -952,7 +961,7 @@ async fn handle_command(manager: &mut Manager<SledStore, Registered>, command: C
             )
             .expect("Callback sending failed"),
         Command::RequestContactUpdateFromProfile(uuid, callback) => callback
-            .send(manager.store().contact_by_id(&uuid))
+            .send(manager.store().contact_by_id(&uuid).await)
             // .send(manager.store().request_contact_update_from_profile(uuid).await)
             .expect("Callback sending failed"),
         Command::RetrieveProfileKey(uuid, profile_key, callback) => callback
@@ -963,7 +972,7 @@ async fn handle_command(manager: &mut Manager<SledStore, Registered>, command: C
                 manager
                     .store()
                     .clone()
-                    .save_contact(&contact)
+                    .save_contact(&contact).await
                     .map_err(|e| e.into()),
             )
             .expect("Callback sending failed"),
@@ -979,8 +988,8 @@ fn almost_clone_contact(contact: &Contact) -> Contact {
         verified: contact.verified.clone(),
         profile_key: contact.profile_key.clone(),
         phone_number: contact.phone_number.clone(),
-        blocked: contact.blocked,
         expire_timer: contact.expire_timer,
+        expire_timer_version: contact.expire_timer_version,
         inbox_position: contact.inbox_position,
         archived: contact.archived,
         avatar: None,

@@ -18,7 +18,7 @@ use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
 use presage::libsignal_service::configuration::SignalServers;
 use presage::libsignal_service::content::ContentBody;
-use presage::libsignal_service::models::Contact;
+//use presage::libsignal_service::models::Contact;
 use presage::libsignal_service::prelude::phonenumber::PhoneNumber;
 use presage::libsignal_service::prelude::AttachmentIdentifier;
 use presage::libsignal_service::prelude::{phonenumber, Uuid};
@@ -26,12 +26,15 @@ use presage::libsignal_service::sender::AttachmentSpec;
 use presage::libsignal_service::zkgroup::profiles::ProfileKey;
 use presage::manager::Confirmation;
 use presage::manager::RegistrationOptions;
-use presage::prelude::AttachmentPointer;
-use presage::prelude::Content;
+use presage::model::contacts::Contact;
+use presage::libsignal_service::content::Content;
+use presage::proto::AttachmentPointer;
 use presage::proto::DataMessage;
 use presage::proto::GroupContextV2;
 use presage::store::StateStore;
-use presage_store_sled::{OnNewIdentity, SledStoreError};
+use presage::store::Thread;
+use presage::model::identity::OnNewIdentity;
+use presage_store_sled::SledStoreError;
 use serde::{Serialize, Serializer};
 use serde_json::error::Error as SerdeError;
 use std::cell::{Cell, OnceCell};
@@ -53,7 +56,7 @@ const MESSAGE_BOUND: usize = 10;
 use futures::channel::oneshot;
 
 use presage::{Manager, ThreadMetadataMessageContent};
-use presage::{Thread, ThreadMetadata};
+use presage::ThreadMetadata;
 use presage_store_sled::MigrationConflictStrategy;
 use presage_store_sled::SledStore;
 
@@ -97,9 +100,9 @@ impl Handler {
         let manager_thread = Rc::new(OnceCell::new());
         let thread = manager_thread.clone();
         log::info!("Setting up the manager2");
-        let registration = if config_store.is_registered() {
+        let registration = if config_store.is_registered().await {
             log::info!("Registered, starting the manager");
-            let registration_credentials = match config_store.load_registration_data()? {
+            let registration_credentials = match config_store.load_registration_data().await? {
                 Some(credentials) => credentials,
                 None => {
                     log::error!("No registration credentials found");
@@ -190,7 +193,7 @@ impl Handler {
             None::<&str>,
             MigrationConflictStrategy::BackupAndDrop,
             OnNewIdentity::Trust,
-        ) {
+        ).await {
             Ok(store) => store,
             Err(e) => {
                 log::info!(
@@ -203,7 +206,7 @@ impl Handler {
                     None::<&str>,
                     MigrationConflictStrategy::BackupAndDrop,
                     OnNewIdentity::Trust,
-                ) {
+                ).await {
                     Ok(store) => store,
                     Err(e) => {
                         log::info!("Failed to open the database: {}", e);
@@ -536,7 +539,7 @@ impl Handler {
                 ));
             }
         };
-        if config_store.is_registered() {
+        if config_store.is_registered().await {
             log::info!("Already registered, lets start the manager2");
         } else {
             log::info!("Not registered, lets start the registration");
@@ -558,7 +561,7 @@ impl Handler {
                 ));
             }
         };
-        if config_store.is_registered() {
+        if config_store.is_registered().await {
             log::info!("Already registered, lets start the manager4");
             return Ok(());
         }
@@ -1678,7 +1681,7 @@ impl Handler {
     ) -> Result<Option<AxolotlResponse>, ApplicationError> {
         log::info!("Unregistering");
         let mut store = Handler::get_config_store().await?;
-        store.clear_registration()?;
+        store.clear_registration().await?;
         exit(0);
     }
 

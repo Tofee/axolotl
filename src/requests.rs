@@ -1,11 +1,11 @@
 //! This module lists the request structures.
 
 use presage::libsignal_service::content::ContentBody;
+use presage::libsignal_service::content::Content;
 use presage::libsignal_service::prelude::AttachmentIdentifier;
 use presage::libsignal_service::prelude::Uuid;
-use presage::prelude::Content;
 use presage::proto::DataMessage;
-use presage::Thread;
+use presage::store::Thread;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize, Debug)]
@@ -198,7 +198,7 @@ impl AxolotlMessage {
             }
             _ => None,
         };
-        let sender = message.metadata.sender.uuid;
+        let sender = message.metadata.sender.raw_uuid();
         let timestamp: u64 = message.metadata.timestamp;
         AxolotlMessage {
             sender: Some(sender),
