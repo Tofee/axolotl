@@ -83,7 +83,9 @@ websocketAdress += "/ws";
 //     websocketAdress = 'ws://localhost:9080/ws';
 //   }
 // }
-websocketAdress = 'ws://localhost:9080/ws';
+
+//Tofe: this is not wanted in the use case of a web frontend, keep the original location+/ws
+//websocketAdress = 'ws://localhost:9080/ws';
 
 // initialise connection to the backend
 app.use(VueNativeSock, websocketAdress,
