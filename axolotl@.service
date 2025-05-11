@@ -1,0 +1,17 @@
+# /etc/systemd/system/axolotl@.service
+
+[Unit]
+Description=Axolotl Signal web daemon
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User=axolotl
+WorkingDirectory=/usr/local/axolotl
+Environment=XDG_CONFIG_HOME=/home/%i/.config
+ExecStart=/usr/local/axolotl/axolotl -m daemon
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
