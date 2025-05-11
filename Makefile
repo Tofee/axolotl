@@ -34,6 +34,8 @@ all: build
 
 build: build-axolotl-web build-axolotl
 
+build-aarch64: build-axolotl-web build-axolotl-aarch64
+
 install: install-axolotl install-metadata
 
 uninstall: uninstall-axolotl
@@ -51,6 +53,13 @@ download-dependencies-axolotl: Cargo.toml Cargo.lock
 build-axolotl: download-dependencies-axolotl
 	@echo "Building axolotl..."
 	$(CARGO) build --features tauri --release --verbose
+
+build-axolotl-aarch64: download-dependencies-axolotl
+	@echo "Building axolotl..."
+	env CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER=aarch64-linux-gnu-gcc \
+    CC_aarch64_unknown_linux_gnu=aarch64-linux-gnu-gcc \
+    CXX_aarch64_unknown_linux_gnu=aarch64-linux-gnu-g++ \
+	$(CARGO) build --target aarch64-unknown-linux-gnu --release --verbose
 
 install-axolotl: build-axolotl
 	@echo "Installing axolotl..."
