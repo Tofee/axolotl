@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import store from '@/store/store'
 import Legacy from '@/layouts/Legacy.vue';
 import Default from '@/layouts/Default.vue';
+import LegacyWithChatList from '@/layouts/LegacyWithChatList.vue';
 
 
 export const router = new createRouter({
@@ -22,7 +23,7 @@ export const router = new createRouter({
       path: "/chat/:id",
       name: "chat",
       meta: {
-        layout: Legacy,
+        layout: LegacyWithChatList,
       },
       props: route => ({
         chatId: route.params.id,

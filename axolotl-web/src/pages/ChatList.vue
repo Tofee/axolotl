@@ -1,5 +1,5 @@
 <template>
-  <component :is="$route.meta.layout || 'div'">
+  <component :is="$route.path=='/' ? $route.meta.layout : 'div'">
     <template #menu>
       <router-link
         v-if="globalConfig.Contacts"
