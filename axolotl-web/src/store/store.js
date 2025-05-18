@@ -283,6 +283,7 @@ export default createStore({
     SOCKET_ONOPEN(state, event) {
       app.config.globalProperties.$socket = event.currentTarget;
       state.socket.isConnected = true;
+      router.push("/");
       state.socket.heartBeatTimer = setInterval(() => {
         const message = "ping";
         state.socket.isConnected &&
