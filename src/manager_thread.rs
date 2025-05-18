@@ -778,22 +778,20 @@ async fn notify_message(msg: &Notification) {
     match &msg.group {
         Some(group) => {
             let body = format!("{}: {}", msg.sender, msg.message);
-            Notification::new()
+            let _ = Notification::new()
                 .summary(group)
                 .body(&body)
                 .icon("signal")
                 .timeout(5000)
-                .show()
-                .expect("Failed to send notification");
+                .show();
         }
         None => {
-            Notification::new()
+            let _ = Notification::new()
                 .summary(&msg.sender)
                 .body(&msg.message)
                 .icon("signal")
                 .timeout(5000)
-                .show()
-                .expect("Failed to send notification");
+                .show();
         }
     }
 }
